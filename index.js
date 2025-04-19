@@ -13,18 +13,22 @@ const TELEGRAM_CHAT_ID = process.env.CHAT_ID;
 app.post('/send-order', async (req, res) => {
   const { products, total } = req.body;
 
+  
+
   const productList = products.map((item, i) =>
     `${i + 1}. ${item.name} – ${item.price.toLocaleString()} so'm`
   ).join('\n');
-
+  
   const message = `
-  🛒 <b>Salom!</b>
-  Siz quyidagi mahsulotlarga buyurtma bermoqdasiz.
+🛒 <b>Yangi buyurtma!</b>
+
+${productList}
+
+💰 <b>Jami:</b> ${total.toLocaleString()} so'm
+
+📍 Iltimos, bizga qayerga mahsulotni yetkazib berish kerakligini GEO lokatsiya orqali bering.`;
+
   
-  💰 <b>Jami:</b> 0 so'm
-  
-  Iltimos, telefon raqamingiz va yetkazib berish manzilingizni yozing.
-  `;
 
   try {
     const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
@@ -48,6 +52,5 @@ app.post('/send-order', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
-
+  console.log(`✅ Server running on port ${PORT}`);
+});
