@@ -24,7 +24,8 @@ app.post('/send-order', async (req, res) => {
   ).join('\n');
 
   const message = `
-🛒 <b>Yangi buyurtma!</b>
+🛒 <b>Salom!</b>
+<b>bozzor.botga hush kelibsiz</b>
 
 ${productList}
 
