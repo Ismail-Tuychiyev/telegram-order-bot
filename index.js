@@ -1,4 +1,3 @@
-// index.js
 require('dotenv').config();
 const express = require('express');
 const fetch = require('node-fetch');
@@ -13,11 +12,10 @@ const TELEGRAM_TOKEN = process.env.BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.CHAT_ID;
 const PORT = process.env.PORT || 3000;
 
-// Init Telegram Bot
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
-const userState = {}; // stores order progress per user
+const userState = {}; // per-user order tracking
 
-// ======== EXPRESS ROUTE (Frontend -> Telegram message) ========
+// ======== EXPRESS ENDPOINT (from website) ========
 app.post('/send-order', async (req, res) => {
   const { products, total } = req.body;
 
@@ -54,8 +52,15 @@ ${productList}
   }
 });
 
-// ======== TELEGRAM BOT LOGIC ========
-bot.onText(/\/start (.+)/, (msg, match) => {
+// ======== TELEGRAM BOT ========
+
+// Handle /start WITHOUT data
+bot.onText(/^\/start$/, (msg) => {
+  bot.sendMessage(msg.chat.id, '❌ Buyurtma yo‘q. Iltimos, mahsulotni sayt orqali tanlang.');
+});
+
+// Handle /start WITH data
+bot.onText(/^\/start (.+)/, (msg, match) => {
   const chatId = msg.chat.id;
   let data;
 
@@ -65,6 +70,7 @@ bot.onText(/\/start (.+)/, (msg, match) => {
     return bot.sendMessage(chatId, '❌ Buyurtma ma’lumotlari noto‘g‘ri yuborilgan.');
   }
 
+  // Save user data
   userState[chatId] = {
     products: data.products,
     total: data.total,
@@ -83,7 +89,6 @@ bot.onText(/\/start (.+)/, (msg, match) => {
 bot.on('location', (msg) => {
   const chatId = msg.chat.id;
   const location = msg.location;
-  console.log('📍 Location received:', location);
 
   if (!userState[chatId]) {
     return bot.sendMessage(chatId, '❌ Buyurtma ma’lumotlari yo‘q. Iltimos, mahsulotni sayt orqali tanlang.');
@@ -105,7 +110,9 @@ bot.on('contact', (msg) => {
   const chatId = msg.chat.id;
   const phone = msg.contact.phone_number;
 
-  if (!userState[chatId]) return;
+  if (!userState[chatId]) {
+    return bot.sendMessage(chatId, '❌ Buyurtma ma’lumotlari yo‘q.');
+  }
 
   userState[chatId].phone = phone;
   userState[chatId].step = 'awaiting_confirm';
@@ -123,7 +130,9 @@ bot.on('callback_query', (query) => {
   if (query.data === 'confirm_order' && userState[chatId]) {
     const data = userState[chatId];
 
-    const productList = data.products.map((item, i) => `${i + 1}. ${item.name} – ${item.price.toLocaleString()} so'm`).join('\n');
+    const productList = data.products.map((item, i) =>
+      `${i + 1}. ${item.name} – ${item.price.toLocaleString()} so'm`
+    ).join('\n');
 
     const message = `
 📦 *Yangi buyurtma!*
@@ -132,16 +141,16 @@ ${productList}
 
 💰 *Jami:* ${data.total.toLocaleString()} so'm
 📞 *Telefon:* ${data.phone}
-📍 *Manzil:* https://maps.google.com/?q=${data.location.latitude},${data.location.longitude}`;
+📍 *Manzil:* [Lokatsiya](https://maps.google.com/?q=${data.location.latitude},${data.location.longitude})`;
 
     bot.sendMessage(process.env.CHAT_ID, message, { parse_mode: 'Markdown' });
     bot.sendMessage(chatId, '✅ Buyurtmangiz yuborildi! Tez orada bog‘lanamiz.');
 
-    delete userState[chatId];
+    delete userState[chatId]; // clear memory
   }
 });
 
-// ======== START EXPRESS SERVER ========
+// ======== START SERVER ========
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
