@@ -1,146 +1,98 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
-const express = require('express');
-const bodyParser = require('body-parser');
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
-const app = express();
-const PORT = process.env.PORT || 3000;
+const userState = {}; // har bir foydalanuvchi uchun session
 
-app.use(bodyParser.json());
+// STEP 1: /start orqali mahsulotlar keladi (encoded JSON)
+bot.onText(/\/start (.+)/, (msg, match) => {
+  const chatId = msg.chat.id;
+  let data;
 
-const userStates = {};
-
-// === 1. Saytdan mahsulotlar keladi ===
-app.post('/send-order', (req, res) => {
-  const { products, total, chatId } = req.body;
-
-  if (!products || !total || !chatId) {
-    return res.status(400).send('❌ Noto‘g‘ri ma’lumot');
+  try {
+    data = JSON.parse(decodeURIComponent(match[1]));
+  } catch (error) {
+    return bot.sendMessage(chatId, '❌ Buyurtma ma’lumotlari noto‘g‘ri yuborilgan.');
   }
 
-  userStates[chatId] = {
-    products,
-    total,
-    step: 'awaiting_phone'
+  userState[chatId] = {
+    products: data.products,
+    total: data.total,
+    step: 'awaiting_location'
   };
 
-  const productList = products.map((p, i) => `${i + 1}. ${p.name} – ${p.price.toLocaleString()} so'm`).join('\n');
-
-  bot.sendMessage(chatId, `🛒 Siz quyidagi mahsulotlarni tanladingiz:\n\n${productList}\n\n💰 Jami: ${total.toLocaleString()} so'm\n\n📞 Iltimos, telefon raqamingizni yuboring:`, {
+  bot.sendMessage(chatId, '📍 Buyurtma qilish uchun manzilingizni yuboring:', {
     reply_markup: {
-      keyboard: [[{ text: "📞 Telefon raqamni yuborish", request_contact: true }]],
-      resize_keyboard: true,
-      one_time_keyboard: true
-    }
-  });
-
-  res.send('✅ Buyurtma qabul qilindi');
-});
-
-// === 2. Telefon raqam: tugma orqali ===
-bot.on('contact', (msg) => {
-  const chatId = msg.chat.id;
-  const phone = msg.contact.phone_number;
-
-  if (!userStates[chatId]) return;
-
-  userStates[chatId].phone = phone;
-  userStates[chatId].step = 'awaiting_location';
-
-  bot.sendMessage(chatId, '📍 Endi iltimos, manzilingizni lokatsiya orqali yuboring:', {
-    reply_markup: {
-      keyboard: [[{ text: "📍 Manzilni yuborish", request_location: true }]],
+      keyboard: [[{ text: '📍 Manzilni yuborish', request_location: true }]],
       resize_keyboard: true,
       one_time_keyboard: true
     }
   });
 });
 
-// === 3. Telefon raqam: matn orqali ===
-bot.on('message', (msg) => {
-  const chatId = msg.chat.id;
-
-  if (!userStates[chatId]) return;
-
-  // Telefon raqamni oddiy matn sifatida yuborish
-  if (userStates[chatId].step === 'awaiting_phone' && /^\+?\d{7,15}$/.test(msg.text)) {
-    userStates[chatId].phone = msg.text;
-    userStates[chatId].step = 'awaiting_location';
-
-    bot.sendMessage(chatId, '📍 Endi iltimos, manzilingizni lokatsiya orqali yuboring:', {
-      reply_markup: {
-        keyboard: [[{ text: "📍 Manzilni yuborish", request_location: true }]],
-        resize_keyboard: true,
-        one_time_keyboard: true
-      }
-    });
-  }
-
-  // Sana qabul qilish (agar kerak bo‘lsa)
-  if (userStates[chatId].step === 'awaiting_date' && /^\d{4}-\d{2}-\d{2}$/.test(msg.text)) {
-    userStates[chatId].date = msg.text;
-    userStates[chatId].step = 'awaiting_confirm';
-
-    bot.sendMessage(chatId, '✅ Hammasi tayyormi? Buyurtmani yuboraymi?', {
-      reply_markup: {
-        inline_keyboard: [[{ text: '🟢 Ha, yuboring', callback_data: 'confirm_order' }]]
-      }
-    });
-  }
-});
-
-// === 4. Lokatsiyani qabul qilish ===
+// STEP 2: Lokatsiyani qabul qilish
 bot.on('location', (msg) => {
   const chatId = msg.chat.id;
   const location = msg.location;
 
-  if (!userStates[chatId]) return;
+  if (!userState[chatId]) {
+    return bot.sendMessage(chatId, '❌ Buyurtma ma’lumotlari yo‘q. Iltimos, mahsulotni sayt orqali tanlang.');
+  }
 
-  userStates[chatId].location = location;
-  userStates[chatId].step = 'awaiting_payment';
+  userState[chatId].location = location;
+  userState[chatId].step = 'awaiting_phone';
 
-  bot.sendMessage(chatId, '💳 Qanday to‘lov qilishni xohlaysiz?', {
+  bot.sendMessage(chatId, '📞 Endi telefon raqamingizni yuboring:', {
     reply_markup: {
-      inline_keyboard: [
-        [{ text: "💵 Naqd", callback_data: "cash" }],
-        [{ text: "💳 Karta orqali", callback_data: "card" }]
-      ]
+      keyboard: [[{ text: '📞 Raqamni yuborish', request_contact: true }]],
+      resize_keyboard: true,
+      one_time_keyboard: true
     }
   });
 });
 
-// === 5. To‘lov turini tanlash va yakuniy xabar ===
+// STEP 3: Telefon raqamni qabul qilish
+bot.on('contact', (msg) => {
+  const chatId = msg.chat.id;
+  const phone = msg.contact.phone_number;
+
+  if (!userState[chatId]) return;
+
+  userState[chatId].phone = phone;
+  userState[chatId].step = 'awaiting_confirm';
+
+  bot.sendMessage(chatId, '✅ Hammasi tayyormi? Quyidagi ma’lumotlarni yuboraymi?', {
+    reply_markup: {
+      inline_keyboard: [[{ text: '🟢 Ha, yuboring', callback_data: 'confirm_order' }]]
+    }
+  });
+});
+
+// STEP 4: Buyurtmani tasdiqlash va admin’ga yuborish
 bot.on('callback_query', (query) => {
   const chatId = query.message.chat.id;
-  const paymentType = query.data;
 
-  if (!userStates[chatId]) return;
+  if (query.data === 'confirm_order' && userState[chatId]) {
+    const data = userState[chatId];
 
-  const data = userStates[chatId];
-  const productList = data.products.map((p, i) => `${i + 1}. ${p.name} – ${p.price.toLocaleString()} so'm`).join('\n');
-  const locationUrl = `https://maps.google.com/?q=${data.location.latitude},${data.location.longitude}`;
+    const productList = data.products.map((item, i) => `${i + 1}. ${item.name} – ${item.price.toLocaleString()} so'm`).join('\n');
 
-  const finalMessage = `
-📦 *Yangi Buyurtma!*
-
+    const message = `
+📦 *Yangi buyurtma!*
 🛒 *Mahsulotlar:*
 ${productList}
 
 💰 *Jami:* ${data.total.toLocaleString()} so'm
 📞 *Telefon:* ${data.phone}
-📍 *Manzil:* [Google Maps](${locationUrl})
-💳 *To‘lov turi:* ${paymentType === 'cash' ? 'Naqd' : 'Karta'}
+📍 *Manzil:* https://maps.google.com/?q=${data.location.latitude},${data.location.longitude}
 `;
 
-  // Admin’ga yuborish
-  bot.sendMessage(process.env.CHAT_ID, finalMessage, { parse_mode: 'Markdown' });
+    // Adminga yuboriladi
+    bot.sendMessage(process.env.CHAT_ID, message, { parse_mode: 'Markdown' });
 
-  // Mijozga tasdiqlovchi xabar
-  bot.sendMessage(chatId, '✅ Rahmat! Buyurtmangiz qabul qilindi. Tez orada siz bilan bog‘lanamiz.');
+    // Mijozga tasdiqlash
+    bot.sendMessage(chatId, '✅ Buyurtmangiz yuborildi! Tez orada bog‘lanamiz.');
 
-  delete userStates[chatId];
+    delete userState[chatId];
+  }
 });
-
-app.get('/', (req, res) => res.send('Bot ishga tushdi.'));
-app.listen(PORT, () => console.log(`✅ Bot server running on port ${PORT}`));
