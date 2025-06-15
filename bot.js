@@ -6,11 +6,12 @@ const bodyParser = require('body-parser');
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const app = express();
 const PORT = process.env.PORT || 3000;
+
 app.use(bodyParser.json());
 
-const userStates = {}; // har bir user uchun session
+const userStates = {};
 
-// 1. Saytdan kelgan buyurtma
+// === 1. Saytdan mahsulotlar keladi ===
 app.post('/send-order', (req, res) => {
   const { products, total, chatId } = req.body;
 
@@ -26,7 +27,7 @@ app.post('/send-order', (req, res) => {
 
   const productList = products.map((p, i) => `${i + 1}. ${p.name} – ${p.price.toLocaleString()} so'm`).join('\n');
 
-  bot.sendMessage(chatId, `🛒 Siz quyidagi mahsulotlarni tanladingiz:\n\n${productList}\n\n💰 Jami: ${total.toLocaleString()} so'm\n\n📞 Endi iltimos, telefon raqamingizni yuboring:`, {
+  bot.sendMessage(chatId, `🛒 Siz quyidagi mahsulotlarni tanladingiz:\n\n${productList}\n\n💰 Jami: ${total.toLocaleString()} so'm\n\n📞 Iltimos, telefon raqamingizni yuboring:`, {
     reply_markup: {
       keyboard: [[{ text: "📞 Telefon raqamni yuborish", request_contact: true }]],
       resize_keyboard: true,
@@ -34,10 +35,10 @@ app.post('/send-order', (req, res) => {
     }
   });
 
-  res.send('✅ Bot ishga tushdi');
+  res.send('✅ Buyurtma qabul qilindi');
 });
 
-// 2. Telefon raqamini qabul qilish
+// === 2. Telefon raqam: tugma orqali ===
 bot.on('contact', (msg) => {
   const chatId = msg.chat.id;
   const phone = msg.contact.phone_number;
@@ -47,7 +48,7 @@ bot.on('contact', (msg) => {
   userStates[chatId].phone = phone;
   userStates[chatId].step = 'awaiting_location';
 
-  bot.sendMessage(chatId, '📍 Iltimos, lokatsiyangizni yuboring:', {
+  bot.sendMessage(chatId, '📍 Endi iltimos, manzilingizni lokatsiya orqali yuboring:', {
     reply_markup: {
       keyboard: [[{ text: "📍 Manzilni yuborish", request_location: true }]],
       resize_keyboard: true,
@@ -56,7 +57,40 @@ bot.on('contact', (msg) => {
   });
 });
 
-// 3. Lokatsiyani qabul qilish
+// === 3. Telefon raqam: matn orqali ===
+bot.on('message', (msg) => {
+  const chatId = msg.chat.id;
+
+  if (!userStates[chatId]) return;
+
+  // Telefon raqamni oddiy matn sifatida yuborish
+  if (userStates[chatId].step === 'awaiting_phone' && /^\+?\d{7,15}$/.test(msg.text)) {
+    userStates[chatId].phone = msg.text;
+    userStates[chatId].step = 'awaiting_location';
+
+    bot.sendMessage(chatId, '📍 Endi iltimos, manzilingizni lokatsiya orqali yuboring:', {
+      reply_markup: {
+        keyboard: [[{ text: "📍 Manzilni yuborish", request_location: true }]],
+        resize_keyboard: true,
+        one_time_keyboard: true
+      }
+    });
+  }
+
+  // Sana qabul qilish (agar kerak bo‘lsa)
+  if (userStates[chatId].step === 'awaiting_date' && /^\d{4}-\d{2}-\d{2}$/.test(msg.text)) {
+    userStates[chatId].date = msg.text;
+    userStates[chatId].step = 'awaiting_confirm';
+
+    bot.sendMessage(chatId, '✅ Hammasi tayyormi? Buyurtmani yuboraymi?', {
+      reply_markup: {
+        inline_keyboard: [[{ text: '🟢 Ha, yuboring', callback_data: 'confirm_order' }]]
+      }
+    });
+  }
+});
+
+// === 4. Lokatsiyani qabul qilish ===
 bot.on('location', (msg) => {
   const chatId = msg.chat.id;
   const location = msg.location;
@@ -66,7 +100,7 @@ bot.on('location', (msg) => {
   userStates[chatId].location = location;
   userStates[chatId].step = 'awaiting_payment';
 
-  bot.sendMessage(chatId, '💳 Qanday to‘lashni xohlaysiz?', {
+  bot.sendMessage(chatId, '💳 Qanday to‘lov qilishni xohlaysiz?', {
     reply_markup: {
       inline_keyboard: [
         [{ text: "💵 Naqd", callback_data: "cash" }],
@@ -76,7 +110,7 @@ bot.on('location', (msg) => {
   });
 });
 
-// 4. To‘lov turini qabul qilish va ADMINga yuborish
+// === 5. To‘lov turini tanlash va yakuniy xabar ===
 bot.on('callback_query', (query) => {
   const chatId = query.message.chat.id;
   const paymentType = query.data;
@@ -99,14 +133,14 @@ ${productList}
 💳 *To‘lov turi:* ${paymentType === 'cash' ? 'Naqd' : 'Karta'}
 `;
 
-  // 1. Admin’ga yuboriladi
+  // Admin’ga yuborish
   bot.sendMessage(process.env.CHAT_ID, finalMessage, { parse_mode: 'Markdown' });
 
-  // 2. Mijozga tasdiq
+  // Mijozga tasdiqlovchi xabar
   bot.sendMessage(chatId, '✅ Rahmat! Buyurtmangiz qabul qilindi. Tez orada siz bilan bog‘lanamiz.');
 
   delete userStates[chatId];
 });
 
-app.get('/', (req, res) => res.send('Bot ishlayapti!'));
-app.listen(PORT, () => console.log(`✅ Server listening on port ${PORT}`));
+app.get('/', (req, res) => res.send('Bot ishga tushdi.'));
+app.listen(PORT, () => console.log(`✅ Bot server running on port ${PORT}`));
