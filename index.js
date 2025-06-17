@@ -19,9 +19,11 @@ app.post('/send-order', async (req, res) => {
     return res.status(400).send("❌ Kerakli ma'lumotlar to‘liq emas.");
   }
 
-const productList = products.map((item, i) =>
-  `${i + 1}. ${item.name} (${item.code || 'no-code'}) – ${item.price.toLocaleString()} so'm`
-).join('\n');
+const productList = products.map((item, i) => {
+  const code = item.code || "Noma'lum";
+  return `${i + 1}. ${item.name} (${code}) – ${item.price.toLocaleString()} so'm`;
+}).join('\n');
+
 
 const message = `
 📦 <b>Yangi buyurtma!</b>
