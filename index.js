@@ -19,11 +19,11 @@ app.post('/send-order', async (req, res) => {
     return res.status(400).send("❌ Kerakli ma'lumotlar to‘liq emas.");
   }
 
-  const productList = products.map((item, i) =>
-    `${i + 1}. ${item.name} – ${item.price.toLocaleString()} so'm`
-  ).join('\n');
+const productList = products.map((item, i) =>
+  `${i + 1}. ${item.name} (${item.code || 'no-code'}) – ${item.price.toLocaleString()} so'm`
+).join('\n');
 
-  const message = `
+const message = `
 📦 <b>Yangi buyurtma!</b>
 🛒 <b>Mahsulotlar:</b>
 ${productList}
@@ -36,7 +36,6 @@ ${productList}
 💳 <b>To‘lov:</b> ${payment}
 📅 <b>Sana:</b> ${date}
 `;
-
   try {
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: 'POST',
